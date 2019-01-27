@@ -104,6 +104,12 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 	if (bl_lvl && bl_lvl < display->panel->bl_config.bl_min_level)
 		bl_lvl = display->panel->bl_config.bl_min_level;
 
+	if (display->panel->bl_config.bl_update ==
+		BL_UPDATE_DELAY_UNTIL_FIRST_FRAME && !c_conn->allow_bl_update) {
+		c_conn->unset_bl_level = bl_lvl;
+		return 0;
+	}
+
 	if (c_conn->ops.set_backlight) {
 		event.type = DRM_EVENT_SYS_BACKLIGHT;
 		event.length = sizeof(u32);
@@ -700,12 +706,13 @@ void sde_connector_helper_bridge_enable(struct drm_connector *connector)
 				MSM_ENC_TX_COMPLETE);
 	c_conn->allow_bl_update = true;
 
-	if (c_conn->bl_device) {
+	if (!display->is_first_boot && c_conn->bl_device) {
 		c_conn->bl_device->props.power = FB_BLANK_UNBLANK;
 		c_conn->bl_device->props.state &= ~BL_CORE_FBBLANK;
 		backlight_update_status(c_conn->bl_device);
 	}
 	c_conn->panel_dead = false;
+	display->is_first_boot = false;
 }
 
 int sde_connector_clk_ctrl(struct drm_connector *connector, bool enable)
@@ -1818,6 +1825,11 @@ static void _sde_connector_report_panel_dead(struct sde_connector *conn)
 	if (!conn)
 		return;
 
+	if (conn->panel_dead_skip) {
+		pr_err("skip because of panel_dead_skip true\n");
+		return;
+	}
+
 	/* Panel dead notification can come:
 	 * 1) ESD thread
 	 * 2) Commit thread (if TE stops coming)
@@ -1953,6 +1965,19 @@ static irqreturn_t esd_err_irq_handle(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+void set_skip_panel_dead(bool on)
+{
+	struct sde_connector *c_conn = primary_c_conn;
+	if (!c_conn) {
+		pr_err("%s: not able to get connector object\n", __func__);
+		return;
+	}
+
+	c_conn->panel_dead_skip = !!on;
+
+	return;
+}
+
 void report_esd_panel_dead(void)
 {
 	struct sde_connector *c_conn = primary_c_conn;
@@ -1961,6 +1986,11 @@ void report_esd_panel_dead(void)
 
 	if (!c_conn) {
 		pr_err("%s: not able to get connector object\n", __func__);
+		return;
+	}
+
+	if (c_conn->panel_dead_skip) {
+		pr_err("skip because of panel_dead_skip true\n");
 		return;
 	}
 
