@@ -4376,6 +4376,11 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 		if (is_client_vote_enabled(chg->usb_icl_votable,
 				WEAK_CHARGER_VOTER) && chg->use_ext_boost)
 			vote(chg->usb_icl_votable, WEAK_CHARGER_VOTER, false, 0);
+
+		/* Remove FCC_STEPPER 1.5A init vote to allow FCC ramp up */
+		if (chg->fcc_stepper_enable)
+			vote(chg->fcc_votable, FCC_STEPPER_VOTER, false, 0);
+
 		/* Schedule work to enable parallel charger */
 		vote(chg->awake_votable, PL_DELAY_VOTER, true, 0);
 		schedule_delayed_work(&chg->pl_enable_work,
