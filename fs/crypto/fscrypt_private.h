@@ -19,6 +19,7 @@
 #include <linux/pfk.h>
 
 /* Encryption parameters */
+#define FS_IV_SIZE			16
 #define FS_KEY_DERIVATION_NONCE_SIZE	16
 
 /**
@@ -134,7 +135,6 @@ extern bool fscrypt_fname_encrypted_size(const struct inode *inode,
 					 u32 *encrypted_len_ret);
 
 /* keyinfo.c */
-
 extern void __exit fscrypt_essiv_cleanup(void);
 
 #endif /* _FSCRYPT_PRIVATE_H */
