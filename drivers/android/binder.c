@@ -2240,7 +2240,8 @@ static size_t binder_get_object(struct binder_proc *proc,
 	size_t object_size = 0;
 
 	read_size = min_t(size_t, sizeof(*object), buffer->data_size - offset);
-	if (read_size < sizeof(*hdr) || !IS_ALIGNED(offset, sizeof(u32)))
+	if (offset > buffer->data_size || read_size < sizeof(*hdr) ||
+	    !IS_ALIGNED(offset, sizeof(u32)))
 		return 0;
 	binder_alloc_copy_from_buffer(&proc->alloc, object, buffer,
 				      offset, read_size);
@@ -2781,7 +2782,7 @@ static int binder_translate_fd_array(struct binder_fd_array_object *fda,
 	}
 	for (fdi = 0; fdi < fda->num_fds; fdi++) {
 		u32 fd;
-		int target_fd;
+
 		binder_size_t offset = fda_offset + fdi * sizeof(fd);
 
 		binder_alloc_copy_from_buffer(&target_proc->alloc,
