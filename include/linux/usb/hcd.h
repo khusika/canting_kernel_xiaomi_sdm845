@@ -447,6 +447,7 @@ extern int usb_hcd_alloc_bandwidth(struct usb_device *udev,
 		struct usb_host_interface *old_alt,
 		struct usb_host_interface *new_alt);
 extern int usb_hcd_get_frame_number(struct usb_device *udev);
+
 extern int usb_hcd_sec_event_ring_setup(struct usb_device *udev,
 	unsigned int intr_num);
 extern int usb_hcd_sec_event_ring_cleanup(struct usb_device *udev,
