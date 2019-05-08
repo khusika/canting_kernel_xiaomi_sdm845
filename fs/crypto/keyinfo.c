@@ -143,11 +143,13 @@ static const struct {
 	const char *cipher_str;
 	int keysize;
 } available_modes[] = {
-	[FS_ENCRYPTION_MODE_AES_256_XTS] = { "xts(aes)",	64},
-	[FS_ENCRYPTION_MODE_AES_256_CTS] = { "cts(cbc(aes))",	32},
-	[FS_ENCRYPTION_MODE_AES_128_CBC] = { "cbc(aes)",	16},
-	[FS_ENCRYPTION_MODE_AES_128_CTS] = { "cts(cbc(aes))",	16},
-	[FS_ENCRYPTION_MODE_PRIVATE]	 = { "bugon",		64},
+	[FS_ENCRYPTION_MODE_AES_256_XTS]      = { "xts(aes)",		64 },
+	[FS_ENCRYPTION_MODE_AES_256_CTS]      = { "cts(cbc(aes))",	32 },
+	[FS_ENCRYPTION_MODE_AES_128_CBC]      = { "cbc(aes)",		16 },
+	[FS_ENCRYPTION_MODE_AES_128_CTS]      = { "cts(cbc(aes))",	16 },
+	[FS_ENCRYPTION_MODE_SPECK128_256_XTS] = { "xts(speck128)",	64 },
+	[FS_ENCRYPTION_MODE_SPECK128_256_CTS] = { "cts(cbc(speck128))",	32 },
+        [FS_ENCRYPTION_MODE_PRIVATE]          = { "bugon", 		64 },
 };
 
 static int determine_cipher_type(struct fscrypt_info *ci, struct inode *inode,
