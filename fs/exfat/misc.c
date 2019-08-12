@@ -42,18 +42,6 @@
 #include "exfat.h"
 #include "version.h"
 
-/*************************************************************************
- * FUNCTIONS WHICH HAS KERNEL VERSION DEPENDENCY
- *************************************************************************/
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
-#define CURRENT_TIME_SEC	timespec64_trunc(current_kernel_time64(), NSEC_PER_SEC)
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-#define CURRENT_TIME_SEC        timespec_trunc(current_kernel_time(), NSEC_PER_SEC)
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0) */
-       /* EMPTY */
-#endif
-
-
 #ifdef CONFIG_EXFAT_UEVENT
 static struct kobject exfat_uevent_kobj;
 
@@ -295,9 +283,10 @@ void exfat_time_unix2fat(struct exfat_sb_info *sbi, exfat_timespec_t *ts,
 
 TIMESTAMP_T *tm_now(struct exfat_sb_info *sbi, TIMESTAMP_T *tp)
 {
-	exfat_timespec_t ts = CURRENT_TIME_SEC;
+	exfat_timespec_t ts;
 	DATE_TIME_T dt;
 
+	ktime_get_real_ts(&ts);
 	exfat_time_unix2fat(sbi, &ts, &dt);
 
 	tp->year = dt.Year;
