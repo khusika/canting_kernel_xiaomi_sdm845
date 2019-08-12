@@ -124,7 +124,6 @@ void __exfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 			sb->s_id, MAJOR(bd_dev), MINOR(bd_dev));
 	} else if (opts->errors == EXFAT_ERRORS_RO && !(sb->s_flags & MS_RDONLY)) {
 		sb->s_flags |= MS_RDONLY;
-		exfat_statistics_set_mnt_ro();
 		pr_err("[EXFAT](%s[%d:%d]): Filesystem has been set "
 			"read-only\n", sb->s_id, MAJOR(bd_dev), MINOR(bd_dev));
 		exfat_uevent_ro_remount(sb);
@@ -235,21 +234,12 @@ void exfat_time_fat2unix(struct exfat_sb_info *sbi, exfat_timespec_t *ts,
 void exfat_time_unix2fat(struct exfat_sb_info *sbi, exfat_timespec_t *ts,
 								DATE_TIME_T *tp)
 {
-	bool tz_valid = (sbi->fsi.vol_type == EXFAT) ? true : false;
 	time_t second = ts->tv_sec;
 	time_t day, month, year;
 	time_t ld; /* leap day */
 
-	tp->Timezone.value = 0x00;
-
-	/* Treats as local time with proper time */
-	if (tz_valid || !sbi->options.tz_utc) {
+	if (!sbi->options.tz_utc)
 		second -= sys_tz.tz_minuteswest * SECS_PER_MIN;
-		if (tz_valid) {
-			tp->Timezone.valid = 1;
-			tp->Timezone.off = TIMEZONE_CUR_OFFSET();
-		}
-	}
 
 	/* Jan 1 GMT 00:00:00 1980. But what about another time zone? */
 	if (second < UNIX_SECS_1980) {
