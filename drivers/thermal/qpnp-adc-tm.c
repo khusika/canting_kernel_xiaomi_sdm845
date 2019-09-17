@@ -219,8 +219,6 @@
 #define QPNP_BTM_Mn_DATA1(n)			((n * 2) + 0xa1)
 #define QPNP_BTM_CHANNELS			8
 
-#define QPNP_ADC_WAKEUP_SRC_TIMEOUT_MS          2000
-
 /* QPNP ADC TM HC end */
 
 struct qpnp_adc_thr_info {
@@ -275,6 +273,7 @@ struct qpnp_adc_tm_chip {
 	bool				adc_tm_initialized;
 	bool				adc_tm_recalib_check;
 	int				max_channels_available;
+	atomic_t			wq_cnt;
 	struct qpnp_vadc_chip		*vadc_dev;
 	struct workqueue_struct		*high_thr_wq;
 	struct workqueue_struct		*low_thr_wq;
@@ -1891,6 +1890,7 @@ static void notify_adc_tm_fn(struct work_struct *work)
 {
 	struct qpnp_adc_tm_sensor *adc_tm = container_of(work,
 		struct qpnp_adc_tm_sensor, work);
+	struct qpnp_adc_tm_chip *chip = adc_tm->chip;
 
 	if (adc_tm->thermal_node) {
 		pr_debug("notifying uspace client\n");
@@ -1901,6 +1901,8 @@ static void notify_adc_tm_fn(struct work_struct *work)
 		else
 			notify_clients(adc_tm);
 	}
+
+	atomic_dec(&chip->wq_cnt);
 }
 
 static int qpnp_adc_tm_recalib_request_check(struct qpnp_adc_tm_chip *chip,
@@ -2144,8 +2146,11 @@ static int qpnp_adc_tm_disable_rearm_high_thresholds(
 		return rc;
 	}
 
-	queue_work(chip->sensor[sensor_num].req_wq,
-		&chip->sensor[sensor_num].work);
+	if (!queue_work(chip->sensor[sensor_num].req_wq,
+				&chip->sensor[sensor_num].work)) {
+		/* The item is already queued, reduce the count */
+		atomic_dec(&chip->wq_cnt);
+	}
 
 	return rc;
 }
@@ -2252,8 +2257,11 @@ static int qpnp_adc_tm_disable_rearm_low_thresholds(
 		return rc;
 	}
 
-	queue_work(chip->sensor[sensor_num].req_wq,
-				&chip->sensor[sensor_num].work);
+	if (!queue_work(chip->sensor[sensor_num].req_wq,
+				&chip->sensor[sensor_num].work)) {
+		/* The item is already queued, reduce the count */
+		atomic_dec(&chip->wq_cnt);
+	}
 
 	return rc;
 }
@@ -2317,6 +2325,8 @@ static int qpnp_adc_tm_read_status(struct qpnp_adc_tm_chip *chip)
 
 fail:
 	mutex_unlock(&chip->adc->adc_lock);
+	if (rc < 0)
+		atomic_dec(&chip->wq_cnt);
 
 	return rc;
 }
@@ -2368,6 +2378,10 @@ static int qpnp_adc_tm_hc_read_status(struct qpnp_adc_tm_chip *chip)
 
 fail:
 	mutex_unlock(&chip->adc->adc_lock);
+
+	if (rc < 0 || (!chip->th_info.adc_tm_high_enable &&
+					!chip->th_info.adc_tm_low_enable))
+		atomic_dec(&chip->wq_cnt);
 
 	return rc;
 }
@@ -2478,6 +2492,7 @@ static irqreturn_t qpnp_adc_tm_high_thr_isr(int irq, void *data)
 		}
 	}
 
+	atomic_inc(&chip->wq_cnt);
 	queue_work(chip->high_thr_wq, &chip->trigger_high_thr_work);
 
 	return IRQ_HANDLED;
@@ -2586,6 +2601,7 @@ static irqreturn_t qpnp_adc_tm_low_thr_isr(int irq, void *data)
 		}
 	}
 
+	atomic_inc(&chip->wq_cnt);
 	queue_work(chip->low_thr_wq, &chip->trigger_low_thr_work);
 
 	return IRQ_HANDLED;
@@ -2714,16 +2730,14 @@ static irqreturn_t qpnp_adc_tm_rc_thr_isr(int irq, void *data)
 	}
 
 	if (sensor_low_notify_num) {
-		pm_wakeup_event(chip->dev,
-				QPNP_ADC_WAKEUP_SRC_TIMEOUT_MS);
-		queue_work(chip->low_thr_wq, &chip->trigger_low_thr_work);
+		if (queue_work(chip->low_thr_wq, &chip->trigger_low_thr_work))
+			atomic_inc(&chip->wq_cnt);
 	}
 
 	if (sensor_high_notify_num) {
-		pm_wakeup_event(chip->dev,
-				QPNP_ADC_WAKEUP_SRC_TIMEOUT_MS);
-		queue_work(chip->high_thr_wq,
-				&chip->trigger_high_thr_work);
+		if (queue_work(chip->high_thr_wq,
+				&chip->trigger_high_thr_work))
+			atomic_inc(&chip->wq_cnt);
 	}
 
 	return IRQ_HANDLED;
@@ -3211,6 +3225,7 @@ static int qpnp_adc_tm_probe(struct platform_device *pdev)
 
 	INIT_WORK(&chip->trigger_high_thr_work, qpnp_adc_tm_high_thr_work);
 	INIT_WORK(&chip->trigger_low_thr_work, qpnp_adc_tm_low_thr_work);
+	atomic_set(&chip->wq_cnt, 0);
 
 	if (!chip->adc_tm_hc) {
 		rc = qpnp_adc_tm_initial_setup(chip);
@@ -3317,18 +3332,11 @@ static void qpnp_adc_tm_shutdown(struct platform_device *pdev)
 static int qpnp_adc_tm_suspend_noirq(struct device *dev)
 {
 	struct qpnp_adc_tm_chip *chip = dev_get_drvdata(dev);
-	struct device_node *node = dev->of_node, *child;
-	int i = 0;
 
-	flush_workqueue(chip->high_thr_wq);
-	flush_workqueue(chip->low_thr_wq);
-
-	for_each_child_of_node(node, child) {
-		if (chip->sensor[i].req_wq) {
-			pr_debug("flushing queue for sensor %d\n", i);
-			flush_workqueue(chip->sensor[i].req_wq);
-		}
-		i++;
+	if (atomic_read(&chip->wq_cnt) != 0) {
+		pr_err(
+			"Aborting suspend, adc_tm notification running while suspending\n");
+		return -EBUSY;
 	}
 	return 0;
 }
