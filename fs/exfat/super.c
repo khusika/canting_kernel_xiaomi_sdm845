@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2012-2013 Samsung Electronics Co., Ltd.
+ *
+ *  super.c: exFAT glue layer for supporting VFS
  */
-
-/************************************************************************/
-/*                                                                      */
-/*  PROJECT : exFAT & FAT12/16/32 File System                           */
-/*  FILE    : core.c                                                    */
-/*  PURPOSE : exFAT glue layer for supporting VFS                       */
-/*                                                                      */
-/*----------------------------------------------------------------------*/
-/*  NOTES                                                               */
-/*                                                                      */
-/*                                                                      */
-/************************************************************************/
 
 #include <linux/version.h>
 #include <linux/module.h>
@@ -95,9 +85,6 @@ static void exfat_init_namebuf(DENTRY_NAMEBUF_T *nb);
 static int exfat_alloc_namebuf(DENTRY_NAMEBUF_T *nb);
 static void exfat_free_namebuf(DENTRY_NAMEBUF_T *nb);
 
-/*************************************************************************
- * INNER FUNCTIONS FOR FUNCTIONS WHICH HAS KERNEL VERSION DEPENDENCY
- *************************************************************************/
 static int __exfat_getattr(struct inode *inode, struct kstat *stat);
 static void __exfat_writepage_end_io(struct bio *bio, int err);
 static inline void __lock_super(struct super_block *sb);
@@ -124,9 +111,6 @@ static int __exfat_cmp(const struct dentry *dentry, unsigned int len,
 static int __exfat_cmpi(const struct dentry *dentry, unsigned int len,
 		const char *str, const struct qstr *name);
 
-/*************************************************************************
- * FUNCTIONS WHICH HAS KERNEL VERSION DEPENDENCY
- *************************************************************************/
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
 static inline void inode_set_iversion(struct inode *inode, u64 val)
 {
@@ -137,7 +121,6 @@ static inline u64 inode_peek_iversion(struct inode *inode)
 	return inode->i_version;
 }
 #endif
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
        /* EMPTY */
@@ -893,13 +876,9 @@ static int exfat_file_fsync(struct file *filp, int datasync)
 }
 #endif
 
-/*************************************************************************
- * MORE FUNCTIONS WHICH HAS KERNEL VERSION DEPENDENCY
- *************************************************************************/
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0)
 #define current_time(x)	CURRENT_TIME_SEC
 #endif
-
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
 static void exfat_writepage_end_io(struct bio *bio)
@@ -1113,10 +1092,6 @@ static int exfat_create(struct inode *dir, struct dentry *dentry, int mode,
 }
 #endif
 
-
-/*************************************************************************
- * WRAP FUNCTIONS FOR DEBUGGING
- *************************************************************************/
 #ifdef CONFIG_EXFAT_TRACE_SB_LOCK
 static inline void __lock_super(struct super_block *sb)
 {
@@ -1145,17 +1120,11 @@ static inline void __unlock_super(struct super_block *sb)
 }
 #endif /* CONFIG_EXFAT_TRACE_SB_LOCK */
 
-/*************************************************************************
- * NORMAL FUNCTIONS
- *************************************************************************/
 static inline loff_t exfat_make_i_pos(FILE_ID_T *fid)
 {
 	return ((loff_t) fid->dir.dir << 32) | (fid->entry & 0xffffffff);
 }
 
-/*======================================================================*/
-/*  Directory Entry Name Buffer Operations                              */
-/*======================================================================*/
 static void exfat_init_namebuf(DENTRY_NAMEBUF_T *nb)
 {
 	nb->lfn = NULL;
@@ -1184,9 +1153,6 @@ static void exfat_free_namebuf(DENTRY_NAMEBUF_T *nb)
 	exfat_init_namebuf(nb);
 }
 
-/*======================================================================*/
-/*  Directory Entry Operations                                          */
-/*======================================================================*/
 #define EXFAT_DSTATE_LOCKED	(void *)(0xCAFE2016)
 #define EXFAT_DSTATE_UNLOCKED	(void *)(0x00000000)
 
@@ -2074,9 +2040,6 @@ static const struct inode_operations exfat_dir_inode_operations = {
 #endif
 };
 
-/*======================================================================*/
-/*  File Operations                                                     */
-/*======================================================================*/
 static const struct inode_operations exfat_symlink_inode_operations = {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	.readlink    = generic_readlink,
@@ -2225,9 +2188,6 @@ static const struct inode_operations exfat_file_inode_operations = {
 #endif
 };
 
-/*======================================================================*/
-/*  Address Space Operations                                            */
-/*======================================================================*/
 /* 2-level option flag */
 #define BMAP_NOT_CREATE				0
 #define BMAP_ADD_BLOCK				1
@@ -2728,10 +2688,6 @@ static const struct address_space_operations exfat_aops = {
 	.bmap        = exfat_aop_bmap
 };
 
-/*======================================================================*/
-/*  Super Operations                                                    */
-/*======================================================================*/
-
 static inline unsigned long exfat_hash(loff_t i_pos)
 {
 	return hash_32(i_pos, EXFAT_HASH_BITS);
@@ -3149,9 +3105,6 @@ static const struct super_operations exfat_sops = {
 	.show_options  = exfat_show_options,
 };
 
-/*======================================================================*/
-/*  SYSFS Operations                                                    */
-/*======================================================================*/
 #define EXFAT_ATTR(name, mode, show, store) \
 static struct exfat_attr exfat_attr_##name = __ATTR(name, mode, show, store)
 
@@ -3272,10 +3225,6 @@ static struct attribute *attributes[] = {
 static struct attribute_group attr_group = {
 	.attrs = attributes,
 };
-
-/*======================================================================*/
-/*  Super Block Read Operations                                         */
-/*======================================================================*/
 
 enum {
 	Opt_uid,

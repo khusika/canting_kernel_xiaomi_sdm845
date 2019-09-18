@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2012-2013 Samsung Electronics Co., Ltd.
+ *
+ *  core_exfat.c: exFAT core code
  */
-
-/************************************************************************/
-/*                                                                      */
-/*  PROJECT : exFAT & FAT12/16/32 File System                           */
-/*  FILE    : core_exfat.c                                              */
-/*  PURPOSE : exFAT-fs core code for exFAT                              */
-/*                                                                      */
-/*----------------------------------------------------------------------*/
-/*  NOTES                                                               */
-/*                                                                      */
-/*                                                                      */
-/************************************************************************/
 
 #include <linux/version.h>
 #include <linux/blkdev.h>
@@ -26,17 +16,6 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 
-/*----------------------------------------------------------------------*/
-/*  Constant & Macro Definitions                                        */
-/*----------------------------------------------------------------------*/
-
-/*----------------------------------------------------------------------*/
-/*  Global Variable Definitions                                         */
-/*----------------------------------------------------------------------*/
-
-/*----------------------------------------------------------------------*/
-/*  Local Variable Definitions                                          */
-/*----------------------------------------------------------------------*/
 static u8 free_bit[] = {
 	0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 4, 0, 1, 0, 2,/*  0 ~  19*/
 	0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0, 5, 0, 1, 0, 2, 0, 1, 0, 3,/* 20 ~  39*/
@@ -69,10 +48,6 @@ static u8 used_bit[] = {
 	4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8             /*240 ~ 255*/
 };
 
-
-/*======================================================================*/
-/*  Local Function Definitions                                          */
-/*======================================================================*/
 /*
  *  Directory Entry Management Functions
  */
@@ -119,7 +94,7 @@ static u32 exfat_get_entry_type(DENTRY_T *p_entry)
 		return TYPE_CRITICAL_SEC;
 	}
 	return TYPE_BENIGN_SEC;
-} /* end of exfat_get_entry_type */
+}
 
 static void exfat_set_entry_type(DENTRY_T *p_entry, u32 type)
 {
@@ -149,56 +124,56 @@ static void exfat_set_entry_type(DENTRY_T *p_entry, u32 type)
 		ep->type = 0x85;
 		ep->attr = cpu_to_le16(ATTR_ARCHIVE | ATTR_SYMLINK);
 	}
-} /* end of exfat_set_entry_type */
+}
 
 static u32 exfat_get_entry_attr(DENTRY_T *p_entry)
 {
 	FILE_DENTRY_T *ep = (FILE_DENTRY_T *)p_entry;
 
 	return (u32)le16_to_cpu(ep->attr);
-} /* end of exfat_get_entry_attr */
+}
 
 static void exfat_set_entry_attr(DENTRY_T *p_entry, u32 attr)
 {
 	FILE_DENTRY_T *ep = (FILE_DENTRY_T *)p_entry;
 
 	ep->attr = cpu_to_le16((u16) attr);
-} /* end of exfat_set_entry_attr */
+}
 
 static u8 exfat_get_entry_flag(DENTRY_T *p_entry)
 {
 	STRM_DENTRY_T *ep = (STRM_DENTRY_T *)p_entry;
 
 	return ep->flags;
-} /* end of exfat_get_entry_flag */
+}
 
 static void exfat_set_entry_flag(DENTRY_T *p_entry, u8 flags)
 {
 	STRM_DENTRY_T *ep = (STRM_DENTRY_T *)p_entry;
 
 	ep->flags = flags;
-} /* end of exfat_set_entry_flag */
+}
 
 static u32 exfat_get_entry_clu0(DENTRY_T *p_entry)
 {
 	STRM_DENTRY_T *ep = (STRM_DENTRY_T *)p_entry;
 
 	return (u32)le32_to_cpu(ep->start_clu);
-} /* end of exfat_get_entry_clu0 */
+}
 
 static void exfat_set_entry_clu0(DENTRY_T *p_entry, u32 start_clu)
 {
 	STRM_DENTRY_T *ep = (STRM_DENTRY_T *)p_entry;
 
 	ep->start_clu = cpu_to_le32(start_clu);
-} /* end of exfat_set_entry_clu0 */
+}
 
 static u64 exfat_get_entry_size(DENTRY_T *p_entry)
 {
 	STRM_DENTRY_T *ep = (STRM_DENTRY_T *)p_entry;
 
 	return le64_to_cpu(ep->valid_size);
-} /* end of exfat_get_entry_size */
+}
 
 static void exfat_set_entry_size(DENTRY_T *p_entry, u64 size)
 {
@@ -206,7 +181,7 @@ static void exfat_set_entry_size(DENTRY_T *p_entry, u64 size)
 
 	ep->valid_size = cpu_to_le64(size);
 	ep->size = cpu_to_le64(size);
-} /* end of exfat_set_entry_size */
+}
 
 static void exfat_get_entry_time(DENTRY_T *p_entry, TIMESTAMP_T *tp, u8 mode)
 {
@@ -238,7 +213,7 @@ static void exfat_get_entry_time(DENTRY_T *p_entry, TIMESTAMP_T *tp, u8 mode)
 	tp->day  = (d & 0x001F);
 	tp->mon  = (d >> 5) & 0x000F;
 	tp->year = (d >> 9);
-} /* end of exfat_get_entry_time */
+}
 
 static void exfat_set_entry_time(DENTRY_T *p_entry, TIMESTAMP_T *tp, u8 mode)
 {
@@ -265,7 +240,7 @@ static void exfat_set_entry_time(DENTRY_T *p_entry, TIMESTAMP_T *tp, u8 mode)
 		ep->access_tz = tp->tz.value;
 		break;
 	}
-} /* end of exfat_set_entry_time */
+}
 
 
 static void __init_file_entry(struct super_block *sb, FILE_DENTRY_T *ep, u32 type)
@@ -280,7 +255,7 @@ static void __init_file_entry(struct super_block *sb, FILE_DENTRY_T *ep, u32 typ
 	exfat_set_entry_time((DENTRY_T *) ep, tp, TM_ACCESS);
 	ep->create_time_ms = 0;
 	ep->modify_time_ms = 0;
-} /* end of __init_file_entry */
+}
 
 static void __init_strm_entry(STRM_DENTRY_T *ep, u8 flags, u32 start_clu, u64 size)
 {
@@ -289,7 +264,7 @@ static void __init_strm_entry(STRM_DENTRY_T *ep, u8 flags, u32 start_clu, u64 si
 	ep->start_clu = cpu_to_le32(start_clu);
 	ep->valid_size = cpu_to_le64(size);
 	ep->size = cpu_to_le64(size);
-} /* end of __init_strm_entry */
+}
 
 static void __init_name_entry(NAME_DENTRY_T *ep, u16 *uniname)
 {
@@ -304,7 +279,7 @@ static void __init_name_entry(NAME_DENTRY_T *ep, u16 *uniname)
 			break;
 		uniname++;
 	}
-} /* end of __init_name_entry */
+}
 
 static s32 exfat_init_dir_entry(struct super_block *sb, CHAIN_T *p_dir, s32 entry, u32 type, u32 start_clu, u64 size)
 {
@@ -333,7 +308,7 @@ static s32 exfat_init_dir_entry(struct super_block *sb, CHAIN_T *p_dir, s32 entr
 		return -EIO;
 
 	return 0;
-} /* end of exfat_init_dir_entry */
+}
 
 s32 update_dir_chksum(struct super_block *sb, CHAIN_T *p_dir, s32 entry)
 {
@@ -367,7 +342,7 @@ out_unlock:
 	dcache_unlock(sb, sector);
 	return ret;
 
-} /* end of update_dir_chksum */
+}
 
 
 static s32 exfat_init_ext_entry(struct super_block *sb, CHAIN_T *p_dir, s32 entry, s32 num_entries,
@@ -408,7 +383,7 @@ static s32 exfat_init_ext_entry(struct super_block *sb, CHAIN_T *p_dir, s32 entr
 	update_dir_chksum(sb, p_dir, entry);
 
 	return 0;
-} /* end of exfat_init_ext_entry */
+}
 
 
 static s32 exfat_delete_dir_entry(struct super_block *sb, CHAIN_T *p_dir, s32 entry, s32 order, s32 num_entries)
@@ -703,7 +678,7 @@ static s32 __extract_uni_name_from_name_entry(NAME_DENTRY_T *ep, u16 *uniname, s
 	*uniname = 0x0;
 	return len;
 
-} /* end of __extract_uni_name_from_name_entry */
+}
 
 #define DIRENT_STEP_FILE	(0)
 #define DIRENT_STEP_STRM	(1)
@@ -925,7 +900,7 @@ found:
 	hint_stat->clu = clu.dir;
 	hint_stat->eidx = dentry + 1;
 	return (dentry - num_ext);
-} /* end of exfat_find_dir_entry */
+}
 
 /* returns -EIO on error */
 static s32 exfat_count_ext_entries(struct super_block *sb, CHAIN_T *p_dir, s32 entry, DENTRY_T *p_entry)
@@ -948,7 +923,7 @@ static s32 exfat_count_ext_entries(struct super_block *sb, CHAIN_T *p_dir, s32 e
 	}
 
 	return count;
-} /* end of exfat_count_ext_entries */
+}
 
 
 /*
@@ -976,7 +951,6 @@ static void exfat_get_uniname_from_ext_entry(struct super_block *sb, CHAIN_T *p_
 	 * So, the index of first file-name dentry should start from 2.
 	 */
 	for (i = 2; i < es->num_entries; i++, ep++) {
-		/* end of name entry */
 		if (exfat_get_entry_type(ep) != TYPE_EXTEND)
 			goto out;
 
@@ -986,7 +960,7 @@ static void exfat_get_uniname_from_ext_entry(struct super_block *sb, CHAIN_T *p_
 
 out:
 	release_dentry_set(es);
-} /* end of exfat_get_uniname_from_ext_entry */
+}
 
 static s32 exfat_calc_num_entries(UNI_NAME_T *p_uniname)
 {
@@ -999,7 +973,7 @@ static s32 exfat_calc_num_entries(UNI_NAME_T *p_uniname)
 	/* 1 file entry + 1 stream entry + name entries */
 	return((len-1) / 15 + 3);
 
-} /* end of exfat_calc_num_entries */
+}
 
 static s32 exfat_check_max_dentries(FILE_ID_T *fid)
 {
@@ -1008,7 +982,7 @@ static s32 exfat_check_max_dentries(FILE_ID_T *fid)
 		return -ENOSPC;
 	}
 	return 0;
-} /* end of check_max_dentries */
+}
 
 /*
  *  Allocation Bitmap Management Functions
@@ -1085,7 +1059,7 @@ s32 load_alloc_bmp(struct super_block *sb)
 	}
 
 	return -EINVAL;
-} /* end of load_alloc_bmp */
+}
 
 void free_alloc_bmp(struct super_block *sb)
 {
@@ -1119,7 +1093,7 @@ static s32 set_alloc_bitmap(struct super_block *sb, u32 clu)
 	bitmap_set((unsigned long *)(fsi->vol_amap[i]->b_data), b, 1);
 
 	return write_sect(sb, sector, fsi->vol_amap[i], 0);
-} /* end of set_alloc_bitmap */
+}
 
 /* WARN :
  * If the value of "clu" is 0, it means cluster 2 which is
@@ -1157,7 +1131,7 @@ static s32 clr_alloc_bitmap(struct super_block *sb, u32 clu)
 	}
 
 	return ret;
-} /* end of clr_alloc_bitmap */
+}
 
 /* WARN :
  * If the value of "clu" is 0, it means cluster 2 which is
@@ -1200,7 +1174,7 @@ static u32 test_alloc_bitmap(struct super_block *sb, u32 clu)
 	}
 
 	return CLUS_EOF;
-} /* end of test_alloc_bitmap */
+}
 
 void sync_alloc_bmp(struct super_block *sb)
 {
@@ -1309,7 +1283,7 @@ out:
 
 	fsi->used_clusters -= num_clusters;
 	return ret;
-} /* end of exfat_free_cluster */
+}
 
 static s32 exfat_alloc_cluster(struct super_block *sb, u32 num_alloc, CHAIN_T *p_chain, s32 dest)
 {
@@ -1421,7 +1395,7 @@ error:
 	if (num_clusters)
 		exfat_free_cluster(sb, p_chain, 0);
 	return ret;
-} /* end of exfat_alloc_cluster */
+}
 
 static s32 exfat_count_used_clusters(struct super_block *sb, u32 *ret_count)
 {
@@ -1448,7 +1422,7 @@ static s32 exfat_count_used_clusters(struct super_block *sb, u32 *ret_count)
 
 	*ret_count = count;
 	return 0;
-} /* end of exfat_count_used_clusters */
+}
 
 
 /*
@@ -1533,6 +1507,4 @@ s32 mount_exfat(struct super_block *sb, pbr_t *p_pbr)
 	}
 
 	return 0;
-} /* end of mount_exfat */
-
-/* end of core_exfat.c */
+}

@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) 2012-2013 Samsung Electronics Co., Ltd.
+ *
+ *  core.c: FAT-common core code
  */
-
-/************************************************************************/
-/*                                                                      */
-/*  PROJECT : exFAT & FAT12/16/32 File System                           */
-/*  FILE    : core.c                                                    */
-/*  PURPOSE : FAT & exFAT common core code for exFAT                    */
-/*                                                                      */
-/*----------------------------------------------------------------------*/
-/*  NOTES                                                               */
-/*                                                                      */
-/*                                                                      */
-/************************************************************************/
 
 #include <linux/version.h>
 #include <linux/blkdev.h>
@@ -30,10 +20,6 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 
-
-/*************************************************************************
- * FUNCTIONS WHICH HAS KERNEL VERSION DEPENDENCY
- *************************************************************************/
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
 static inline u64 inode_peek_iversion(struct inode *inode)
 {
@@ -41,10 +27,6 @@ static inline u64 inode_peek_iversion(struct inode *inode)
 }
 #endif
 
-
-/*----------------------------------------------------------------------*/
-/*  Constant & Macro Definitions                                        */
-/*----------------------------------------------------------------------*/
 static inline void __set_sb_dirty(struct super_block *sb)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0)
@@ -70,10 +52,6 @@ void set_sb_dirty(struct super_block *sb)
 {
 	__set_sb_dirty(sb);
 }
-
-/*
- *  File System Management Functions
- */
 
 static s32 check_type_size(void)
 {
@@ -222,7 +200,7 @@ static s32 __clear_cluster(struct inode *inode, u32 clu)
 out:
 	brelse(tmp_bh);
 	return ret;
-} /* end of __clear_cluster */
+}
 
 static s32 __find_last_cluster(struct super_block *sb, CHAIN_T *p_chain, u32 *ret_clu)
 {
@@ -510,7 +488,7 @@ load_default:
 	exfat_log_msg(sb, KERN_INFO, "trying to load default upcase table");
 	/* load default upcase table */
 	return __load_default_upcase_table(sb);
-} /* end of load_upcase_table */
+}
 
 
 /*
@@ -579,7 +557,7 @@ static s32 find_location(struct super_block *sb, CHAIN_T *p_dir, s32 entry, u64 
 	*sector = off >> blksize_bits;
 	*sector += CLUS_TO_SECT(fsi, clu);
 	return 0;
-} /* end of find_location */
+}
 
 DENTRY_T *get_dentry_in_dir(struct super_block *sb, CHAIN_T *p_dir, s32 entry, u64 *sector)
 {
@@ -612,7 +590,7 @@ DENTRY_T *get_dentry_in_dir(struct super_block *sb, CHAIN_T *p_dir, s32 entry, u
 	if (sector)
 		*sector = sec;
 	return (DENTRY_T *)(buf + off);
-} /* end of get_dentry_in_dir */
+}
 
 /* used only in search empty_slot() */
 #define CNT_UNUSED_NOHIT	(-1)
@@ -736,9 +714,10 @@ static s32 search_empty_slot(struct super_block *sb, HINT_FEMP_T *hint_femp, CHA
 	}
 
 	return -ENOSPC;
-} /* end of search_empty_slot */
+}
 
-/* find empty directory entry.
+/*
+ * find empty directory entry.
  * if there isn't any empty slot, expand cluster chain.
  */
 static s32 find_empty_entry(struct inode *inode, CHAIN_T *p_dir, s32 num_entries)
@@ -855,7 +834,7 @@ static s32 find_empty_entry(struct inode *inode, CHAIN_T *p_dir, s32 num_entries
 	}
 
 	return dentry;
-} /* end of find_empty_entry */
+}
 
 #define EXFAT_MIN_SUBDIR	(2)
 
@@ -991,7 +970,7 @@ static s32 get_num_entries_and_dos_name(struct super_block *sb, CHAIN_T *p_dir,
 
 	*entries = num_entries;
 	return 0;
-} /* end of get_num_entries_and_dos_name */
+}
 
 void get_uniname_from_dos_entry(struct super_block *sb, DOS_DENTRY_T *ep, UNI_NAME_T *p_uniname, u8 mode)
 {
@@ -1004,7 +983,7 @@ void get_uniname_from_dos_entry(struct super_block *sb, DOS_DENTRY_T *ep, UNI_NA
 
 	memcpy(dos_name.name, ep->name, DOS_NAME_LENGTH);
 	nls_sfn_to_uni16s(sb, &dos_name, p_uniname);
-} /* end of get_uniname_from_dos_entry */
+}
 
 /* returns the length of a struct qstr, ignoring trailing dots */
 static inline unsigned int __striptail_len(unsigned int len, const char *name)
@@ -1145,7 +1124,7 @@ static s32 create_dir(struct inode *inode, CHAIN_T *p_dir, UNI_NAME_T *p_uniname
 	fid->hint_femp.eidx = -1;
 
 	return 0;
-} /* end of create_dir */
+}
 
 static s32 create_file(struct inode *inode, CHAIN_T *p_dir, UNI_NAME_T *p_uniname, u8 mode, FILE_ID_T *fid)
 {
@@ -1196,7 +1175,7 @@ static s32 create_file(struct inode *inode, CHAIN_T *p_dir, UNI_NAME_T *p_uninam
 	fid->hint_femp.eidx = -1;
 
 	return 0;
-} /* end of create_file */
+}
 
 static s32 remove_file(struct inode *inode, CHAIN_T *p_dir, s32 entry)
 {
@@ -1224,7 +1203,7 @@ static s32 remove_file(struct inode *inode, CHAIN_T *p_dir, s32 entry)
 
 	/* (1) update the directory entry */
 	return fsi->fs_func->delete_dir_entry(sb, p_dir, entry, 0, num_entries);
-} /* end of remove_file */
+}
 
 static s32 rename_file(struct inode *inode, CHAIN_T *p_dir, s32 oldentry, UNI_NAME_T *p_uniname, FILE_ID_T *fid)
 {
@@ -1311,7 +1290,7 @@ static s32 rename_file(struct inode *inode, CHAIN_T *p_dir, s32 oldentry, UNI_NA
 	}
 
 	return 0;
-} /* end of rename_file */
+}
 
 static s32 move_file(struct inode *inode, CHAIN_T *p_olddir, s32 oldentry,
 		CHAIN_T *p_newdir, UNI_NAME_T *p_uniname, FILE_ID_T *fid)
@@ -1393,12 +1372,8 @@ static s32 move_file(struct inode *inode, CHAIN_T *p_olddir, s32 oldentry,
 	fid->entry = newentry;
 
 	return 0;
-} /* end of move_file */
+}
 
-
-/*======================================================================*/
-/*  Global Function Definitions                                         */
-/*======================================================================*/
 /* roll back to the initial state of the file system */
 s32 fscore_init(void)
 {
@@ -1599,7 +1574,7 @@ free_upcase:
 bd_close:
 	bdev_close_dev(sb);
 	return ret;
-} /* end of fscore_mount */
+}
 
 /* umount the file system volume */
 s32 fscore_umount(struct super_block *sb)
@@ -1673,10 +1648,6 @@ u32 fscore_get_au_stat(struct super_block *sb, s32 mode)
 	return 0;
 }
 
-
-/*----------------------------------------------------------------------*/
-/*  File Operation Functions                                            */
-/*----------------------------------------------------------------------*/
 /* lookup a file */
 s32 fscore_lookup(struct inode *inode, u8 *path, FILE_ID_T *fid)
 {
@@ -1769,7 +1740,7 @@ s32 fscore_lookup(struct inode *inode, u8 *path, FILE_ID_T *fid)
 	fid->hint_femp.eidx = -1;
 
 	return 0;
-} /* end of fscore_lookup */
+}
 
 /* create a file */
 s32 fscore_create(struct inode *inode, u8 *path, u8 mode, FILE_ID_T *fid)
@@ -1887,7 +1858,7 @@ err_out:
 		*rcount = read_bytes;
 
 	return ret;
-} /* end of fscore_read_link */
+}
 
 /* write data into a opened file */
 s32 fscore_write_link(struct inode *inode, FILE_ID_T *fid, void *buffer, u64 count, u64 *wcount)
@@ -2101,7 +2072,7 @@ err_out:
 		*wcount = write_bytes;
 
 	return ret;
-} /* end of fscore_write_link */
+}
 
 /* resize the file length */
 s32 fscore_truncate(struct inode *inode, u64 old_size, u64 new_size)
@@ -2280,8 +2251,7 @@ s32 fscore_truncate(struct inode *inode, u64 old_size, u64 new_size)
 		if (update_dir_chksum_with_entry_set(sb, es))
 			return -EIO;
 		release_dentry_set(es);
-
-	} /* end of if(fid->dir.dir != DIR_DELETED) */
+	}
 
 	/* (2) cut off from the FAT chain */
 	if ((fid->flags == 0x01) &&
@@ -2313,7 +2283,7 @@ s32 fscore_truncate(struct inode *inode, u64 old_size, u64 new_size)
 	fs_set_vol_flags(sb, VOL_CLEAN);
 
 	return 0;
-} /* end of fscore_truncate */
+}
 
 static void update_parent_info(FILE_ID_T *fid, struct inode *parent_inode)
 {
@@ -2484,7 +2454,7 @@ out:
 	fs_set_vol_flags(sb, VOL_CLEAN);
 
 	return ret;
-} /* end of fscore_rename */
+}
 
 /* remove a file */
 s32 fscore_remove(struct inode *inode, FILE_ID_T *fid)
@@ -2542,7 +2512,7 @@ s32 fscore_remove(struct inode *inode, FILE_ID_T *fid)
 	fs_set_vol_flags(sb, VOL_CLEAN);
 out:
 	return ret;
-} /* end of fscore_remove */
+}
 
 
 /*
@@ -2664,7 +2634,7 @@ s32 fscore_read_inode(struct inode *inode, DIR_ENTRY_T *info)
 	}
 
 	return 0;
-} /* end of fscore_read_inode */
+}
 
 /* set the information of a given file
  * REMARK : This function does not need any file name on linux
@@ -2736,7 +2706,7 @@ s32 fscore_write_inode(struct inode *inode, DIR_ENTRY_T *info, s32 sync)
 	//fs_set_vol_flags(sb, VOL_CLEAN);
 
 	return ret;
-} /* end of fscore_write_inode */
+}
 
 
 /*
@@ -2900,8 +2870,7 @@ s32 fscore_map_clus(struct inode *inode, u32 clu_offset, u32 *clu, int dest)
 			if (update_dir_chksum_with_entry_set(sb, es))
 				return -EIO;
 			release_dentry_set(es);
-
-		} /* end of if != DIR_DELETED */
+		}
 
 		/* add number of new blocks to inode */
 		inode->i_blocks += num_to_be_allocated << (fsi->cluster_size_bits - sb->s_blocksize_bits);
@@ -2934,7 +2903,7 @@ s32 fscore_map_clus(struct inode *inode, u32 clu_offset, u32 *clu, int dest)
 	fid->hint_bmap.clu = *clu;
 
 	return 0;
-} /* end of fscore_map_clus */
+}
 
 /* allocate reserved cluster */
 s32 fscore_reserve_clus(struct inode *inode)
@@ -2998,10 +2967,6 @@ s32 fscore_unlink(struct inode *inode, FILE_ID_T *fid)
 
 	return 0;
 }
-
-/*----------------------------------------------------------------------*/
-/*  Directory Operation Functions                                       */
-/*----------------------------------------------------------------------*/
 
 /* create a directory */
 s32 fscore_mkdir(struct inode *inode, u8 *path, FILE_ID_T *fid)
@@ -3189,7 +3154,7 @@ s32 fscore_readdir(struct inode *inode, DIR_ENTRY_T *dir_entry)
 	fid->rwoffset = (s64)dentry;
 
 	return 0;
-} /* end of fscore_readdir */
+}
 
 /* remove a directory */
 s32 fscore_rmdir(struct inode *inode, FILE_ID_T *fid)
@@ -3246,6 +3211,4 @@ s32 fscore_rmdir(struct inode *inode, FILE_ID_T *fid)
 	fs_set_vol_flags(sb, VOL_CLEAN);
 
 	return ret;
-} /* end of fscore_rmdir */
-
-/* end of core.c */
+}
