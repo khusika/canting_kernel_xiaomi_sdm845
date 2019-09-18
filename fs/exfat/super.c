@@ -49,14 +49,13 @@
 #include "exfat.h"
 #include "core.h"
 
-#include "api.c"
-
 /* skip iterating emit_dots when dir is empty */
 #define ITER_POS_FILLED_DOTS	(2)
 
 static struct kset *exfat_kset;
 static struct kmem_cache *exfat_inode_cachep;
 
+static DEFINE_MUTEX(_lock_core);
 
 static int exfat_default_codepage = CONFIG_EXFAT_DEFAULT_CODEPAGE;
 static char exfat_default_iocharset[] = CONFIG_EXFAT_DEFAULT_IOCHARSET;
@@ -75,6 +74,7 @@ static struct inode *exfat_build_inode(struct super_block *sb, const FILE_ID_T *
 static void exfat_detach(struct inode *inode);
 static void exfat_attach(struct inode *inode, loff_t i_pos);
 static inline unsigned long exfat_hash(loff_t i_pos);
+static s32 __exfat_sync_fs(struct super_block *sb, s32 do_sync);
 static int __exfat_write_inode(struct inode *inode, int sync);
 static int exfat_sync_inode(struct inode *inode);
 static int exfat_write_inode(struct inode *inode, struct writeback_control *wbc);
@@ -89,7 +89,7 @@ static int __exfat_getattr(struct inode *inode, struct kstat *stat);
 static void __exfat_writepage_end_io(struct bio *bio, int err);
 static inline void __lock_super(struct super_block *sb);
 static inline void __unlock_super(struct super_block *sb);
-static int __exfat_create(struct inode *dir, struct dentry *dentry);
+static int exfat_create_compat(struct inode *dir, struct dentry *dentry);
 static int __exfat_revalidate(struct dentry *dentry);
 static int __exfat_revalidate_ci(struct dentry *dentry, unsigned int flags);
 static int __exfat_file_fsync(struct file *filp, loff_t start, loff_t end, int datasync);
@@ -121,6 +121,155 @@ static inline u64 inode_peek_iversion(struct inode *inode)
 	return inode->i_version;
 }
 #endif
+
+/* mount the file system volume */
+static s32 exfat_mount(struct super_block *sb)
+{
+	s32 err;
+
+	/* acquire the core lock for file system ccritical section */
+	mutex_lock(&_lock_core);
+
+	err = exfat_meta_cache_init(sb);
+	if (err)
+		goto out;
+
+	err = exfat_fscore_mount(sb);
+out:
+	if (err)
+		exfat_meta_cache_shutdown(sb);
+
+	/* release the core lock for file system critical section */
+	mutex_unlock(&_lock_core);
+
+	return err;
+}
+
+/* unmount the file system volume */
+static s32 exfat_umount(struct super_block *sb)
+{
+	s32 err;
+
+	/* acquire the core lock for file system ccritical section */
+	mutex_lock(&_lock_core);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_umount(sb);
+	exfat_meta_cache_shutdown(sb);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+
+	/* release the core lock for file system critical section */
+	mutex_unlock(&_lock_core);
+
+	return err;
+}
+
+static s32 exfat_set_vol_flags(struct super_block *sb, u16 new_flag, s32 always_sync)
+{
+	s32 err;
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_set_vol_flags(sb, new_flag, always_sync);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* read the target string of symlink */
+static s32 exfat_read_link(struct inode *inode, FILE_ID_T *fid, void *buffer, u64 count, u64 *rcount)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(fid && buffer);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_read_link(inode, fid, buffer, count, rcount);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* write the target string of symlink */
+static s32 exfat_write_link(struct inode *inode, FILE_ID_T *fid, void *buffer, u64 count, u64 *wcount)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(fid && buffer);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_write_link(inode, fid, buffer, count, wcount);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* remove a file */
+static s32 exfat_remove(struct inode *inode, FILE_ID_T *fid)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(fid);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_remove(inode, fid);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* get the information of a given file */
+static s32 exfat_read_inode(struct inode *inode, DIR_ENTRY_T *info)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_read_inode(inode, info);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* return the cluster number in the given cluster offset */
+static s32 exfat_map_clus(struct inode *inode, u32 clu_offset, u32 *clu, int dest)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(clu);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_map_clus(inode, clu_offset, clu, dest);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* read a directory entry from the opened directory */
+static s32 __exfat_readdir(struct inode *inode, DIR_ENTRY_T *dir_entry)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(dir_entry);
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_readdir(inode, dir_entry);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+/* reflect the internal dirty flags to VFS bh dirty flags */
+static s32 exfat_cache_flush(struct super_block *sb, int do_sync)
+{
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	exfat_fcache_flush(sb, do_sync);
+	exfat_dcache_flush(sb, do_sync);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return 0;
+}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
        /* EMPTY */
@@ -341,7 +490,7 @@ get_new:
 	if (cpos >= EXFAT_I(inode)->fid.size)
 		goto end_of_dir;
 
-	err = fsapi_readdir(inode, &de);
+	err = __exfat_readdir(inode, &de);
 	if (err) {
 		// at least we tried to read a sector
 		// move cpos to next sector position (should be aligned)
@@ -485,7 +634,7 @@ get_new:
 	if (cpos >= EXFAT_I(inode)->fid.size)
 		goto end_of_dir;
 
-	err = fsapi_readdir(inode, &de);
+	err = __exfat_readdir(inode, &de);
 	if (err) {
 		// at least we tried to read a sector
 		// move cpos to next sector position (should be aligned)
@@ -1076,19 +1225,19 @@ static void *exfat_follow_link(struct dentry *dentry, struct nameidata *nd)
 static int exfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 			 bool excl)
 {
-	return __exfat_create(dir, dentry);
+	return exfat_create_compat(dir, dentry);
 }
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
 static int exfat_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 			struct nameidata *nd)
 {
-	return __exfat_create(dir, dentry);
+	return exfat_create_compat(dir, dentry);
 }
 #else
 static int exfat_create(struct inode *dir, struct dentry *dentry, int mode,
 			struct nameidata *nd)
 {
-	return __exfat_create(dir, dentry);
+	return exfat_create_compat(dir, dentry);
 }
 #endif
 
@@ -1466,7 +1615,25 @@ static const struct file_operations exfat_dir_operations = {
 	.unlocked_ioctl = exfat_generic_ioctl,
 };
 
-static int __exfat_create(struct inode *dir, struct dentry *dentry)
+/* create a file */
+static s32 __exfat_create(struct inode *inode, u8 *path, u8 mode, FILE_ID_T *fid)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	/* check the validity of pointer parameters */
+	ASSERT(fid && path);
+
+	if (unlikely(!strlen(path)))
+		return -EINVAL;
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_create(inode, path, mode, fid);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
+static int exfat_create_compat(struct inode *dir, struct dentry *dentry)
 {
 	struct super_block *sb = dir->i_sb;
 	struct inode *inode;
@@ -1476,7 +1643,7 @@ static int __exfat_create(struct inode *dir, struct dentry *dentry)
 
 	__lock_super(sb);
 
-	err = fsapi_create(dir, (u8 *) dentry->d_name.name, FM_REGULAR, &fid);
+	err = __exfat_create(dir, (u8 *) dentry->d_name.name, FM_REGULAR, &fid);
 	if (err)
 		goto out;
 
@@ -1510,12 +1677,23 @@ out:
 
 static int exfat_find(struct inode *dir, struct qstr *qname, FILE_ID_T *fid)
 {
+	struct super_block *sb = dir->i_sb;
+	struct exfat_sb_info *sbi = EXFAT_SB(sb);
+	u8 *path = (u8 *)qname->name;
 	int err;
 
 	if (qname->len == 0)
 		return -ENOENT;
 
-	err = fsapi_lookup(dir, (u8 *) qname->name, fid);
+	/* check the validity of pointer parameters */
+	ASSERT(fid && path);
+
+	if (unlikely(!strlen(path)))
+		return -EINVAL;
+
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_lookup(dir, path, fid);
+	mutex_unlock(&(sbi->s_vlock));
 	if (err)
 		return -ENOENT;
 
@@ -1562,7 +1740,7 @@ static struct dentry *__exfat_lookup(struct inode *dir, struct dentry *dentry)
 			err = -ENOMEM;
 			goto error;
 		}
-		fsapi_read_link(dir, &fid, EXFAT_I(inode)->target, i_size_read(inode), &ret);
+		exfat_read_link(dir, &fid, EXFAT_I(inode)->target, i_size_read(inode), &ret);
 		*(EXFAT_I(inode)->target + i_size_read(inode)) = '\0';
 	}
 
@@ -1620,13 +1798,20 @@ static int exfat_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = dir->i_sb;
+	struct exfat_sb_info *sbi = EXFAT_SB(sb);
+	FILE_ID_T *fid = &(EXFAT_I(inode)->fid);
 	int err;
 
 	__lock_super(sb);
 
 	EXFAT_I(inode)->fid.size = i_size_read(inode);
 
-	err = fsapi_unlink(dir, &(EXFAT_I(inode)->fid));
+	/* check the validity of pointer parameters */
+	ASSERT(fid);
+
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_unlink(dir, fid);
+	mutex_unlock(&(sbi->s_vlock));
 	if (err)
 		goto out;
 
@@ -1665,14 +1850,14 @@ static int exfat_symlink(struct inode *dir, struct dentry *dentry, const char *t
 
 	__lock_super(sb);
 
-	err = fsapi_create(dir, (u8 *) dentry->d_name.name, FM_SYMLINK, &fid);
+	err = __exfat_create(dir, (u8 *) dentry->d_name.name, FM_SYMLINK, &fid);
 	if (err)
 		goto out;
 
-	err = fsapi_write_link(dir, &fid, (char *) target, len, &ret);
+	err = exfat_write_link(dir, &fid, (char *) target, len, &ret);
 
 	if (err) {
-		fsapi_remove(dir, &fid);
+		exfat_remove(dir, &fid);
 		goto out;
 	}
 
@@ -1709,18 +1894,31 @@ out:
 	return err;
 }
 
-
 static int __exfat_mkdir(struct inode *dir, struct dentry *dentry)
 {
 	struct super_block *sb = dir->i_sb;
+	struct exfat_sb_info *sbi = EXFAT_SB(sb);
 	struct inode *inode;
 	FILE_ID_T fid;
 	loff_t i_pos;
+	u8 *path;
 	int err;
 
 	__lock_super(sb);
 
-	err = fsapi_mkdir(dir, (u8 *) dentry->d_name.name, &fid);
+	path = (u8 *) dentry->d_name.name;
+
+	/* check the validity of pointer parameters */
+	ASSERT(path);
+
+	if (unlikely(!strlen(path))) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_mkdir(dir, path, &fid);
+	mutex_unlock(&(sbi->s_vlock));
 	if (err)
 		goto out;
 
@@ -1758,13 +1956,20 @@ static int exfat_rmdir(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = dir->i_sb;
+	struct exfat_sb_info *sbi = EXFAT_SB(sb);
+	FILE_ID_T *fid = &(EXFAT_I(inode)->fid);
 	int err;
 
 	__lock_super(sb);
 
 	EXFAT_I(inode)->fid.size = i_size_read(inode);
 
-	err = fsapi_rmdir(dir, &(EXFAT_I(inode)->fid));
+	/* check the validity of pointer parameters */
+	ASSERT(fid);
+
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_rmdir(inode, fid);
+	mutex_unlock(&(sbi->s_vlock));
 	if (err)
 		goto out;
 
@@ -1793,6 +1998,7 @@ static int __exfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 {
 	struct inode *old_inode, *new_inode;
 	struct super_block *sb = old_dir->i_sb;
+	struct exfat_sb_info *sbi = EXFAT_SB(sb);
 	loff_t i_pos;
 	int err;
 
@@ -1803,7 +2009,13 @@ static int __exfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 	EXFAT_I(old_inode)->fid.size = i_size_read(old_inode);
 
-	err = fsapi_rename(old_dir, &(EXFAT_I(old_inode)->fid), new_dir, new_dentry);
+	/* check the validity of pointer parameters */
+	ASSERT(&(EXFAT_I(old_inode)->fid));
+
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_rename(old_dir, &(EXFAT_I(old_inode)->fid),
+				new_dir, new_dentry);
+	mutex_unlock(&(sbi->s_vlock));
 	if (err)
 		goto out;
 
@@ -2069,7 +2281,7 @@ static int exfat_file_release(struct inode *inode, struct file *filp)
 	/* FIXME : Added bug_on to confirm that there is no size mismatch */
 	exfat_debug_bug_on(EXFAT_I(inode)->fid.size != i_size_read(inode));
 	EXFAT_I(inode)->fid.size = i_size_read(inode);
-	fsapi_sync_fs(sb, 0);
+	__exfat_sync_fs(sb, 0);
 	return 0;
 }
 
@@ -2098,6 +2310,18 @@ static const struct file_operations exfat_file_operations = {
 
 static const struct address_space_operations exfat_aops;
 
+/* resize the file length */
+static s32 __exfat_truncate(struct inode *inode, u64 old_size, u64 new_size)
+{
+	s32 err;
+	struct super_block *sb = inode->i_sb;
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_truncate(inode, old_size, new_size);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
 static void exfat_truncate(struct inode *inode, loff_t old_size)
 {
 	struct super_block *sb = inode->i_sb;
@@ -2119,7 +2343,7 @@ static void exfat_truncate(struct inode *inode, loff_t old_size)
 
 	exfat_debug_check_clusters(inode);
 
-	err = fsapi_truncate(inode, old_size, i_size_read(inode));
+	err = __exfat_truncate(inode, old_size, i_size_read(inode));
 	if (err)
 		goto out;
 
@@ -2140,9 +2364,9 @@ out:
 	 *
 	 * comment by sh.hong:
 	 * This seems to mean 'intra page/block' truncate and writing.
-	 * I couldn't find a reason to change the values prior to fsapi_truncate
+	 * I couldn't find a reason to change the values prior to __exfat_truncate
 	 * Therefore, I switched the order of operations
-	 * so that it's possible to utilize i_size_ondisk in fsapi_truncate
+	 * so that it's possible to utilize i_size_ondisk in __exfat_truncate
 	 */
 
 	aligned_size = i_size_read(inode);
@@ -2224,9 +2448,9 @@ static int exfat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 	EXFAT_I(inode)->fid.size = i_size_read(inode);
 
 	if (*create & BMAP_ADD_CLUSTER)
-		err = fsapi_map_clus(inode, clu_offset, &cluster, 1);
+		err = exfat_map_clus(inode, clu_offset, &cluster, 1);
 	else
-		err = fsapi_map_clus(inode, clu_offset, &cluster, ALLOC_NOWHERE);
+		err = exfat_map_clus(inode, clu_offset, &cluster, ALLOC_NOWHERE);
 
 	if (err) {
 		if (err != -ENOSPC)
@@ -2572,7 +2796,7 @@ static void exfat_write_failed(struct address_space *mapping, loff_t to)
 
 static int exfat_check_writable(struct super_block *sb)
 {
-	if (fsapi_check_bdi_valid(sb))
+	if (exfat_fscore_check_bdi_valid(sb))
 		return -EIO;
 
 	if (sb->s_flags & MS_RDONLY)
@@ -2732,7 +2956,7 @@ static int exfat_fill_inode(struct inode *inode, const FILE_ID_T *fid)
 	inode_inc_iversion(inode);
 	inode->i_generation = get_seconds();
 
-	if (fsapi_read_inode(inode, &info) < 0) {
+	if (exfat_read_inode(inode, &info) < 0) {
 		MMSG("%s: failed to read stat!\n", __func__);
 		return -EIO;
 	}
@@ -2842,6 +3066,7 @@ static int __exfat_write_inode(struct inode *inode, int sync)
 	struct super_block *sb = inode->i_sb;
 	struct exfat_sb_info *sbi = EXFAT_SB(sb);
 	DIR_ENTRY_T info;
+	s32 err;
 
 	if (inode->i_ino == EXFAT_ROOT_INO)
 		return 0;
@@ -2854,7 +3079,11 @@ static int __exfat_write_inode(struct inode *inode, int sync)
 	exfat_time_unix2fat(sbi, &inode->i_atime, &info.AccessTimestamp);
 
 	/* FIXME : Do we need handling error? */
-	return fsapi_write_inode(inode, &info, sync);
+	mutex_lock(&(sbi->s_vlock));
+	err = exfat_fscore_write_inode(inode, &info, sync);
+	mutex_unlock(&(sbi->s_vlock));
+
+	return err;
 }
 
 static int exfat_sync_inode(struct inode *inode)
@@ -2883,12 +3112,12 @@ static void exfat_evict_inode(struct inode *inode)
 				__func__, inode,
 				S_ISDIR(inode->i_mode) ? "directory" : "file",
 				(u64)old_size);
-		fsapi_truncate(inode, old_size, 0);
+		__exfat_truncate(inode, old_size, 0);
 	}
 
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
-	fsapi_invalidate_extent(inode);
+	exfat_extent_cache_inval_inode(inode);
 	exfat_detach(inode);
 
 	/* after end of this function, caller will remove inode hash */
@@ -2909,7 +3138,7 @@ static void exfat_put_super(struct super_block *sb)
 	if (__is_sb_dirty(sb))
 		exfat_write_super(sb);
 
-	err = fsapi_umount(sb);
+	err = exfat_umount(sb);
 
 	if (sbi->nls_disk) {
 		unload_nls(sbi->nls_disk);
@@ -2943,7 +3172,7 @@ static inline void __flush_delayed_meta(struct super_block *sb, s32 sync)
 	struct exfat_sb_info *sbi = EXFAT_SB(sb);
 
 	if (sbi->options.delayed_meta)
-		fsapi_cache_flush(sb, sync);
+		exfat_cache_flush(sb, sync);
 }
 
 static void exfat_write_super(struct super_block *sb)
@@ -2958,7 +3187,7 @@ static void exfat_write_super(struct super_block *sb)
 	__flush_delayed_meta(sb, 0);
 
 	if (!(sb->s_flags & MS_RDONLY))
-		fsapi_sync_fs(sb, 0);
+		__exfat_sync_fs(sb, 0);
 
 	__unlock_super(sb);
 
@@ -2975,6 +3204,17 @@ static void exfat_write_super(struct super_block *sb)
 			(jiffies - time) * 1000 / HZ);
 }
 
+/* synchronize a file system volume */
+static s32 __exfat_sync_fs(struct super_block *sb, s32 do_sync)
+{
+	s32 err;
+
+	mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+	err = exfat_fscore_sync_fs(sb, do_sync);
+	mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+	return err;
+}
+
 static int exfat_sync_fs(struct super_block *sb, int wait)
 {
 	int err = 0;
@@ -2984,7 +3224,7 @@ static int exfat_sync_fs(struct super_block *sb, int wait)
 		__lock_super(sb);
 		__set_sb_clean(sb);
 
-		err = fsapi_sync_fs(sb, 1);
+		err = __exfat_sync_fs(sb, 1);
 
 		__unlock_super(sb);
 	}
@@ -3003,9 +3243,21 @@ static int exfat_statfs(struct dentry *dentry, struct kstatfs *buf)
 	FS_INFO_T *fsi = &(EXFAT_SB(sb)->fsi);
 	VOL_INFO_T info;
 
-	/* fsapi_statfs will try to get a volume lock if needed */
-	if (fsapi_statfs(sb, &info))
+	/* exfat_statfs will try to get a volume lock if needed */
+	if (fsi->used_clusters == (u32) ~0) {
+		s32 err;
+
+		mutex_lock(&(EXFAT_SB(sb)->s_vlock));
+		err = exfat_fscore_statfs(sb, &info);
+		mutex_unlock(&(EXFAT_SB(sb)->s_vlock));
+
 		return -EIO;
+	}
+
+	info.ClusterSize = fsi->cluster_size;
+	info.NumClusters = fsi->num_clusters - 2; /* clu 0 & 1 */
+	info.UsedClusters = fsi->used_clusters + fsi->reserved_clusters;
+	info.FreeClusters = info.NumClusters - info.UsedClusters;
 
 	if (fsi->prev_eio)
 		exfat_msg(sb, KERN_INFO, "called statfs with previous"
@@ -3036,7 +3288,7 @@ static int exfat_remount(struct super_block *sb, int *flags, char *data)
 
 	exfat_remount_syncfs(sb);
 
-	fsapi_set_vol_flags(sb, VOL_CLEAN, 1);
+	exfat_set_vol_flags(sb, VOL_CLEAN, 1);
 
 	exfat_log_msg(sb, KERN_INFO, "re-mounted(%s->%s), eio=0x%x, Opts: %s",
 		(prev_sb_flags & MS_RDONLY) ? "ro" : "rw",
@@ -3152,9 +3404,9 @@ static ssize_t fratio_show(struct exfat_sb_info *sbi, char *buf)
 	unsigned int n_dirty_au = 0;
 	unsigned int fr = 0;
 
-	n_total_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_TOTAL);
-	n_clean_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_CLEAN);
-	n_full_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_FULL);
+	n_total_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_TOTAL);
+	n_clean_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_CLEAN);
+	n_full_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_FULL);
 	n_dirty_au = n_total_au - (n_full_au + n_clean_au);
 
 	if (!n_dirty_au)
@@ -3172,7 +3424,7 @@ static ssize_t totalau_show(struct exfat_sb_info *sbi, char *buf)
 {
 	unsigned int n_au = 0;
 
-	n_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_TOTAL);
+	n_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_TOTAL);
 	return snprintf(buf, PAGE_SIZE, "%u\n", n_au);
 }
 EXFAT_ATTR(totalau, 0444, totalau_show, NULL);
@@ -3181,7 +3433,7 @@ static ssize_t cleanau_show(struct exfat_sb_info *sbi, char *buf)
 {
 	unsigned int n_clean_au = 0;
 
-	n_clean_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_CLEAN);
+	n_clean_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_CLEAN);
 	return snprintf(buf, PAGE_SIZE, "%u\n", n_clean_au);
 }
 EXFAT_ATTR(cleanau, 0444, cleanau_show, NULL);
@@ -3190,7 +3442,7 @@ static ssize_t fullau_show(struct exfat_sb_info *sbi, char *buf)
 {
 	unsigned int n_full_au = 0;
 
-	n_full_au = fsapi_get_au_stat(sbi->host_sb, VOL_AU_STAT_FULL);
+	n_full_au = exfat_fscore_get_au_stat(sbi->host_sb, VOL_AU_STAT_FULL);
 	return snprintf(buf, PAGE_SIZE, "%u\n", n_full_au);
 }
 EXFAT_ATTR(fullau, 0444, fullau_show, NULL);
@@ -3456,7 +3708,7 @@ static int exfat_read_root(struct inode *inode)
 
 	EXFAT_I(inode)->target = NULL;
 
-	if (fsapi_read_inode(inode, &info) < 0)
+	if (exfat_read_inode(inode, &info) < 0)
 		return -EIO;
 
 	inode->i_uid = sbi->options.fs_uid;
@@ -3480,8 +3732,6 @@ static int exfat_read_root(struct inode *inode)
 	set_nlink(inode, info.NumSubdirs + 2);
 	return 0;
 }
-
-
 
 static void setup_dops(struct super_block *sb)
 {
@@ -3537,7 +3787,7 @@ static int exfat_fill_super(struct super_block *sb, void *data, int silent)
 	setup_exfat_sync_super_wq(sb);
 	setup_dops(sb);
 
-	err = fsapi_mount(sb);
+	err = exfat_mount(sb);
 	if (err) {
 		exfat_log_msg(sb, KERN_ERR, "failed to recognize fat type");
 		goto failed_mount;
@@ -3614,7 +3864,7 @@ static int exfat_fill_super(struct super_block *sb, void *data, int silent)
 	return 0;
 
 failed_mount2:
-	fsapi_umount(sb);
+	exfat_umount(sb);
 failed_mount:
 	exfat_log_msg(sb, KERN_INFO, "failed to mount! (%d)", err);
 
@@ -3685,7 +3935,7 @@ static void exfat_debug_kill_sb(struct super_block *sb)
 			/* invalidate_bdev drops all device cache include dirty.
 			 * we use this to simulate device removal
 			 */
-			fsapi_cache_release(sb);
+			exfat_cache_release(sb);
 			invalidate_bdev(bdev);
 		}
 	}
@@ -3726,7 +3976,7 @@ static int __init init_exfat_fs(void)
 	int err;
 
 	exfat_log_version();
-	err = fsapi_init();
+	err = exfat_fscore_init();
 	if (err)
 		goto error;
 
@@ -3779,7 +4029,7 @@ error:
 	}
 
 	exfat_destroy_inodecache();
-	fsapi_shutdown();
+	exfat_fscore_shutdown();
 
 	pr_err("exFAT: failed to initialize FS driver(err:%d)\n", err);
 	return err;
@@ -3800,7 +4050,7 @@ static void __exit exit_exfat_fs(void)
 #ifdef CONFIG_EXFAT_USE_FOR_VFAT
 	unregister_filesystem(&vfat_fs_type);
 #endif /* CONFIG_EXFAT_USE_FOR_VFAT */
-	fsapi_shutdown();
+	exfat_fscore_shutdown();
 }
 
 module_init(init_exfat_fs);
