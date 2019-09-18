@@ -27,7 +27,7 @@ static inline u64 inode_peek_iversion(struct inode *inode)
 }
 #endif
 
-static inline void __exfat_set_sb_dirty(struct super_block *sb)
+void exfat_set_sb_dirty(struct super_block *sb)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 7, 0)
 	sb->s_dirt = 1;
@@ -46,11 +46,6 @@ static inline void __exfat_set_sb_dirty(struct super_block *sb)
 	}
 	spin_unlock(&sbi->work_lock);
 #endif
-}
-
-void exfat_set_sb_dirty(struct super_block *sb)
-{
-	__exfat_set_sb_dirty(sb);
 }
 
 static s32 check_type_size(void)
