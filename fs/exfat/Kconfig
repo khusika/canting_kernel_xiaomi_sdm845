@@ -65,19 +65,15 @@ if EXFAT_DEBUG
 
 config EXFAT_DBG_IOCTL
 	bool "Enable debug-ioctl features"
-	depends on EXFAT_DEBUG
 
 config EXFAT_DBG_MSG
 	bool "Enable debug messages"
-	depends on EXFAT_DEBUG
 
 config EXFAT_DBG_BUGON
 	bool "Enable strict BUG_ON() for debugging"
-	depends on EXFAT_DEBUG
 
 config EXFAT_DBG_WARNON
 	bool "enable strict WARN_ON() for debugging"
-	depends on EXFAT_DEBUG
 
 endif # if EXFAT_DEBUG
 
