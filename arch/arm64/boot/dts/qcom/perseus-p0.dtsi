@@ -362,6 +362,8 @@
 	qcom,fg-esr-clamp-mohms = <60>;
 	qcom,fg-batt-temp-delta = <6>;
 	qcom,battery-data = <&mtp_batterydata>;
+	qcom,slope-limit-temp-threshold = <100>;
+	qcom,slope-limit-coeffs = <10 11 12 13>;
 };
 
 &smb1355_charger_0 {
