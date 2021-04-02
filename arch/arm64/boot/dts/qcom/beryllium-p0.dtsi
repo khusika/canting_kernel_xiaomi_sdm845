@@ -511,7 +511,7 @@
 		/*novatek,mp-support-dt;*/
 	};
 	focaltech@38 {
-		compatible = "focaltech,fts";
+		compatible = "focaltech,focal";
 		reg = <0x38>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <31 0>;
@@ -524,6 +524,10 @@
 		focaltech,irq-gpio = <&tlmm 31 0x02>;
 		focaltech,max-touch-number = <10>;
 		focaltech,display-coords = <0 0 1080 2246>;
+		focaltech,project-name = "e10";
+		focaltech,lockdown-info-addr = <0x1FA0>;
+		focaltech,timeout-read-reg = <1000>;
+		focaltech,cutoff-power;
 		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
 		pinctrl-0 = <&ts_int_active &ts_reset_active>;
 		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;

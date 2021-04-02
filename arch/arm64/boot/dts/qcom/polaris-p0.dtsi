@@ -457,6 +457,9 @@
 		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
 		pinctrl-0 = <&ts_active>;
 		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+		/*synaptics,palm-rx-channel = <10>;*/
+		/*synaptics,palm-rx-area = <400>;*/
+		/*synaptics,palm-tx-disable = <4>;*/
 		synaptics,drm-dsi-reset = <&tlmm 6 0>;
 		synaptics,reset-gpio = <&tlmm 99 0x00>;
 		synaptics,irq-gpio = <&tlmm  125 0x2008>;
