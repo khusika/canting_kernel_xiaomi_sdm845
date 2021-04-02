@@ -396,7 +396,16 @@
 	qcom,fg-jeita-thresholds = <0 15 45 60>;
 	qcom,fg-esr-clamp-mohms = <60>;
 	qcom,fg-batt-temp-delta = <6>;
+	qcom,optimize-sram;
+	qcom,optimize-sram-seq = <
+		0x9 0x3 0x2
+		0xA 0x0 0x1
+		0xA 0x1 0x0
+		0xA 0x2 0x6
+		0xA 0x3 0x20
+		0xC 0x1 0x12>;
 	qcom,battery-data = <&mtp_batterydata>;
+	qcom,fg-rconn-mohms = <10>;
 	qcom,slope-limit-temp-threshold = <100>;
 	qcom,slope-limit-coeffs = <10 11 12 13>;
 };
